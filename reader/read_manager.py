@@ -8,7 +8,7 @@ from reader.data_map_construct import get_folder_paths
 from reader.incremental_updating import get_mysteel_indicators_date_map, get_ths_indicators_date_map, \
     filter_update_files
 from reader.local_file_map import file_construct
-from utils.data_structure import is_stop_indicator
+from utils.data_structure import is_stop_indicator, generate_uuid
 
 
 def run():
@@ -57,7 +57,8 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
     with conn.cursor() as cursor:
         insert_sql = """
                     INSERT INTO TXBBG02 (
-                        DATE, 
+                        UUID,
+                        RECORD_DATE, 
                         INDICATOR_VALUE, 
                         INDICATOR_ID, 
                         INDICATOR_UNIT, 
@@ -66,14 +67,16 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
                         INDICATOR_NAME, 
                         INDICATOR_TITLE, 
                         REC_CREATOR, 
-                        RED_CREATED_TIME, 
-                        REC_MODIFIED, 
-                        REC_MODIFIED_TIME
+                        REC_CREATE_TIME, 
+                        REC_REVISOR, 
+                        REC_REVISOR_TIME
                     ) 
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, 'SYS', NOW(), %s, NOW()
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, 'System', %s, 'System', %s
                     );
                 """
+        now = datetime.now()
+        current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
         new_date = last_date
         for index, row in data_df.iterrows():
             current_date = row.iloc[0]
@@ -81,14 +84,9 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
             if current_date <= last_date:
                 break
             cursor.execute(insert_sql, (
-                current_date, indicator_value, indicator_id, indicator_unit, indicator_frequency, indicator_resource,
-                indicator_name, file_name, None))
+                generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit, indicator_frequency,
+                indicator_resource, indicator_name, file_name, current_time, current_time))
             new_date = max(new_date, current_date)
-        # 记录指标最后更新日期
-        # if new_date != last_date:
-        #     if new_indicator_flag:
-        #         sql = "insert into "
-        #     cursor.execute(insert_sql, ())
         conn.commit()
 
 
@@ -113,7 +111,8 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         exist_indicator.add(indicator_name)
     with conn.cursor() as cursor:
         insert_sql = """insert into TXBBG01 (
-                        DATE, 
+                        UUID,
+                        RECORD_DATE, 
                         INDICATOR_ID, 
                         INDICATOR_UNIT, 
                         INDICATOR_NAME,
@@ -122,7 +121,11 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
                         INDICATOR_VALUE,
                         INDICATOR_TITLE, 
                         REC_CREATOR, 
-                        REC_CREATED_TIME) values (%s, %s, %s, %s, %s, %s, %s, %s, 'SYS', NOW())"""
+                        REC_CREATE_TIME,
+                        REC_REVISOR,
+                        REC_REVISOR_TIME) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'System', %s, 'System', %s)"""
+        now = datetime.now()
+        current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
         for index, row in data_df.iterrows():
             current_date = row.iloc[0]
             current_value = row.iloc[1]
@@ -130,8 +133,8 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
                 break
             try:
                 cursor.execute(insert_sql, (
-                current_date, indicator_id, indicator_unit, indicator_name, indicator_frequency, indicator_resource,
-                current_value, file_name))
+                    generate_uuid(), current_date, indicator_id, indicator_unit, indicator_name, indicator_frequency,
+                    indicator_resource, current_value, file_name, current_time, current_time))
             except Exception as e:
                 print(current_value)
                 print(e)

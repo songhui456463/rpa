@@ -31,6 +31,8 @@ def extract_prefix(file_name):
 
 def file_is_update(file_name, last_time):
     current_time = datetime.fromtimestamp(os.path.getmtime(file_name)).replace(microsecond=0)
+    if isinstance(last_time, str):
+        last_time = datetime.strptime(last_time, '%Y-%m-%d %H:%M:%S')
     return current_time > last_time
 
 
