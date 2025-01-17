@@ -4,15 +4,22 @@ from datetime import datetime
 import pandas as pd
 
 from datasource_connect import get_connetcion
+from reader.category_map import category_map
 from reader.data_map_construct import get_folder_paths
 from reader.incremental_updating import get_mysteel_indicators_date_map, get_ths_indicators_date_map, \
     filter_update_files
 from reader.local_file_map import file_construct
 from utils.data_structure import is_stop_indicator, generate_uuid
 
+# 如果使用 mysql 将此占位符改为 '%s'
+db_hold = '?'
 
-def run():
-    with get_connetcion() as connection:
+
+def run(database='dm'):
+    if database == 'mysql':
+        global db_hold
+        db_hold = '%s'
+    with get_connetcion('dm') as connection:
         mysteel_indicators_date_map = get_mysteel_indicators_date_map(connection)
         ths_indicators_date_map = get_ths_indicators_date_map(connection)
         file_to_update_map = filter_update_files(get_folder_paths())
@@ -54,40 +61,49 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
         return
     else:
         exist_indicator.add(indicator_id)
+    if indicator_id in category_map:
+        sql_table = category_map[indicator_id]
+    else:
+        return
+
+    now = datetime.now()
+    current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
+    new_date = last_date
+    many_data = []
+    for index, row in data_df.iterrows():
+        current_date = row.iloc[0]
+        indicator_value = row.iloc[1]
+        if current_date <= last_date:
+            break
+        many_data.append((generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit,
+                         indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
+                         current_time))
+        new_date = max(new_date, current_date)
     with conn.cursor() as cursor:
-        insert_sql = """
-                    INSERT INTO TXBBG02 (
-                        UUID,
-                        RECORD_DATE, 
-                        INDICATOR_VALUE, 
-                        INDICATOR_ID, 
-                        INDICATOR_UNIT, 
-                        INDICATOR_FREQUENCY, 
-                        INDICATOR_RESOURCE, 
-                        INDICATOR_NAME, 
-                        INDICATOR_TITLE, 
-                        REC_CREATOR, 
-                        REC_CREATE_TIME, 
-                        REC_REVISOR, 
-                        REC_REVISOR_TIME
-                    ) 
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, 'System', %s, 'System', %s
-                    );
-                """
-        now = datetime.now()
-        current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
-        new_date = last_date
-        for index, row in data_df.iterrows():
-            current_date = row.iloc[0]
-            indicator_value = row.iloc[1]
-            if current_date <= last_date:
-                break
-            cursor.execute(insert_sql, (
-                generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit, indicator_frequency,
-                indicator_resource, indicator_name, file_name, current_time, current_time))
-            new_date = max(new_date, current_date)
+        insert_sql = f"""
+                            INSERT INTO {sql_table} (
+                                UUID,
+                                RECORD_DATE, 
+                                INDICATOR_VALUE, 
+                                INDICATOR_ID, 
+                                INDICATOR_UNIT, 
+                                INDICATOR_FREQUENCY, 
+                                INDICATOR_RESOURCE, 
+                                INDICATOR_NAME, 
+                                INDICATOR_TITLE, 
+                                REC_CREATOR, 
+                                REC_CREATE_TIME, 
+                                REC_REVISOR, 
+                                REC_REVISOR_TIME
+                            ) 
+                            VALUES (
+                                {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, 'System', {db_hold}, 'System', {db_hold}
+                            );
+                        """
+        cursor.executemany(insert_sql, many_data)
         conn.commit()
+
+
 
 
 def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn, exist_indicator):
@@ -109,35 +125,40 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         return
     else:
         exist_indicator.add(indicator_name)
+    if indicator_id in category_map:
+        sql_table = category_map[indicator_id]
+    else:
+        return
+    now = datetime.now()
+    current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
+    many_data = []
+    for index, row in data_df.iterrows():
+        current_date = row.iloc[0]
+        current_value = row.iloc[1]
+        if current_date <= last_date:
+            break
+        many_data.append((generate_uuid(), current_date, indicator_id, indicator_unit, indicator_name,
+                          indicator_frequency, indicator_resource, current_value, file_name, current_time,
+                          current_time))
     with conn.cursor() as cursor:
-        insert_sql = """insert into TXBBG01 (
-                        UUID,
-                        RECORD_DATE, 
-                        INDICATOR_ID, 
-                        INDICATOR_UNIT, 
-                        INDICATOR_NAME,
-                        INDICATOR_FREQUENCY, 
-                        INDICATOR_RESOURCE, 
-                        INDICATOR_VALUE,
-                        INDICATOR_TITLE, 
-                        REC_CREATOR, 
-                        REC_CREATE_TIME,
-                        REC_REVISOR,
-                        REC_REVISOR_TIME) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'System', %s, 'System', %s)"""
-        now = datetime.now()
-        current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
-        for index, row in data_df.iterrows():
-            current_date = row.iloc[0]
-            current_value = row.iloc[1]
-            if current_date <= last_date:
-                break
-            try:
-                cursor.execute(insert_sql, (
-                    generate_uuid(), current_date, indicator_id, indicator_unit, indicator_name, indicator_frequency,
-                    indicator_resource, current_value, file_name, current_time, current_time))
-            except Exception as e:
-                print(current_value)
-                print(e)
+        insert_sql = f"""insert into {sql_table} (
+                            UUID,
+                            RECORD_DATE, 
+                            INDICATOR_ID, 
+                            INDICATOR_UNIT, 
+                            INDICATOR_NAME,
+                            INDICATOR_FREQUENCY, 
+                            INDICATOR_RESOURCE, 
+                            INDICATOR_VALUE,
+                            INDICATOR_TITLE, 
+                            REC_CREATOR, 
+                            REC_CREATE_TIME,
+                            REC_REVISOR,
+                            REC_REVISOR_TIME) values ({db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, {db_hold}, 'System', {db_hold}, 'System', {db_hold})"""
+        try:
+            cursor.executemany(insert_sql, many_data)
+        except Exception as e:
+            print(e)
         conn.commit()
 
 
