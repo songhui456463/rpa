@@ -6,10 +6,9 @@ import pandas as pd
 from datasource_connect import get_connetcion
 from reader.category_map import category_map
 from reader.data_map_construct import get_folder_paths
-from reader.incremental_updating import get_mysteel_indicators_date_map, get_ths_indicators_date_map, \
-    filter_update_files
+from reader.incremental_updating import filter_update_files, TABLE_NAME
 from reader.local_file_map import file_construct
-from utils.data_structure import is_stop_indicator, generate_uuid
+from utils.data_structure import is_stop_indicator, generate_uuid, collect_rows
 
 # 如果使用 mysql 将此占位符改为 '%s'
 db_hold = '?'
@@ -20,12 +19,11 @@ def run(database='dm'):
         global db_hold
         db_hold = '%s'
     with get_connetcion('dm') as connection:
-        mysteel_indicators_date_map = get_mysteel_indicators_date_map(connection)
-        ths_indicators_date_map = get_ths_indicators_date_map(connection)
+        indicators_date_map = get_indicators_id_date_map(connection)
         file_to_update_map = filter_update_files(get_folder_paths())
-        read_and_insert_data(insert_data_ths, ths_indicators_date_map, file_construct['ths'],
+        read_and_insert_data(insert_data_ths, indicators_date_map, file_construct['ths'],
                              file_to_update_map[file_construct['ths']['folder_path']], connection)
-        read_and_insert_data(insert_data_mysteel, mysteel_indicators_date_map, file_construct['mysteel'],
+        read_and_insert_data(insert_data_mysteel, indicators_date_map, file_construct['mysteel'],
                              file_to_update_map[file_construct['mysteel']['folder_path']], connection)
 
 
@@ -76,8 +74,8 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
         if current_date <= last_date:
             break
         many_data.append((generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit,
-                         indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
-                         current_time))
+                          indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
+                          current_time))
         new_date = max(new_date, current_date)
     with conn.cursor() as cursor:
         insert_sql = f"""
@@ -102,8 +100,6 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
                         """
         cursor.executemany(insert_sql, many_data)
         conn.commit()
-
-
 
 
 def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn, exist_indicator):
@@ -160,6 +156,17 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         except Exception as e:
             print(e)
         conn.commit()
+
+
+def get_indicators_id_date_map(conn):
+    result = []
+    with conn.cursor() as cur:
+        for table_name in TABLE_NAME:
+            sql = "select INDICATOR_ID, MAX(RECORD_DATE) from {db_hold} group by INDICATOR_ID"
+            cur.execute(sql, table_name)
+            result.append(cur.fetchall())
+
+    return collect_rows(result)
 
 
 if __name__ == '__main__':

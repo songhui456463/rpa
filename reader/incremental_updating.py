@@ -4,11 +4,17 @@ from datetime import datetime
 import pandas as pd
 
 from file_handle import file_is_update, extract_file_title, extract_prefix
-from utils.data_structure import collect_rows
 
 # 记录目录中文件状态，据此文件来进行文件层面的增量更新
 LOCAL_FILE_STATUS = 'file_status.csv'
 
+TABLE_NAME = ['TXBBG01',
+              'TXBBG02',
+              'TXBBG03',
+              'TXBBG04',
+              'TXBBG05',
+              'TXBBG06',
+              'TXBBG07']
 
 def filter_update_files(folder_paths):
     """
@@ -68,20 +74,6 @@ def update_file_stats(folder_path, file_name_list, filter_function):
         file_status_list.append(row)
     df = pd.DataFrame(file_status_list)
     df.to_csv(os.path.join(folder_path, LOCAL_FILE_STATUS), index=False, header=False)
-
-
-def get_mysteel_indicators_date_map(conn):
-    with conn.cursor() as cur:
-        sql = "select INDICATOR_ID, MAX(RECORD_DATE) from TXBBG01 group by INDICATOR_ID"
-        cur.execute(sql)
-        return collect_rows(cur.fetchall())
-
-
-def get_ths_indicators_date_map(conn):
-    with conn.cursor() as cur:
-        sql = "select INDICATOR_ID, MAX(RECORD_DATE) from TXBBG02 group by INDICATOR_ID"
-        cur.execute(sql)
-        return collect_rows(cur.fetchall())
 
 
 def collect_file_status(df):
