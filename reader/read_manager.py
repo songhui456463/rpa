@@ -18,7 +18,7 @@ def run(database='dm'):
     if database == 'mysql':
         global db_hold
         db_hold = '%s'
-    with get_connetcion('dm') as connection:
+    with get_connetcion(database) as connection:
         indicators_date_map = get_indicators_id_date_map(connection)
         file_to_update_map = filter_update_files(get_folder_paths())
         read_and_insert_data(insert_data_ths, indicators_date_map, file_construct['ths'],
@@ -162,9 +162,9 @@ def get_indicators_id_date_map(conn):
     result = []
     with conn.cursor() as cur:
         for table_name in TABLE_NAME:
-            sql = "select INDICATOR_ID, MAX(RECORD_DATE) from {db_hold} group by INDICATOR_ID"
-            cur.execute(sql, table_name)
-            result.append(cur.fetchall())
+            sql = f"""select INDICATOR_ID, MAX(RECORD_DATE) from {table_name} group by INDICATOR_ID"""
+            cur.execute(sql)
+            result.extend(cur.fetchall())
 
     return collect_rows(result)
 
