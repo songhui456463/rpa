@@ -6,10 +6,9 @@ import pandas as pd
 from datasource_connect import get_connetcion
 from reader.category_map import category_map
 from reader.data_map_construct import get_folder_paths
-from reader.incremental_updating import get_mysteel_indicators_date_map, get_ths_indicators_date_map, \
-    filter_update_files
+from reader.incremental_updating import filter_update_files, TABLE_NAME
 from reader.local_file_map import file_construct
-from utils.data_structure import is_stop_indicator, generate_uuid
+from utils.data_structure import is_stop_indicator, generate_uuid, collect_rows
 
 # 如果使用 mysql 将此占位符改为 '%s'
 db_hold = '?'
@@ -19,13 +18,12 @@ def run(database='dm'):
     if database == 'mysql':
         global db_hold
         db_hold = '%s'
-    with get_connetcion('dm') as connection:
-        mysteel_indicators_date_map = get_mysteel_indicators_date_map(connection)
-        ths_indicators_date_map = get_ths_indicators_date_map(connection)
+    with get_connetcion(database) as connection:
+        indicators_date_map = get_indicators_id_date_map(connection)
         file_to_update_map = filter_update_files(get_folder_paths())
-        read_and_insert_data(insert_data_ths, ths_indicators_date_map, file_construct['ths'],
+        read_and_insert_data(insert_data_ths, indicators_date_map, file_construct['ths'],
                              file_to_update_map[file_construct['ths']['folder_path']], connection)
-        read_and_insert_data(insert_data_mysteel, mysteel_indicators_date_map, file_construct['mysteel'],
+        read_and_insert_data(insert_data_mysteel, indicators_date_map, file_construct['mysteel'],
                              file_to_update_map[file_construct['mysteel']['folder_path']], connection)
 
 
@@ -52,7 +50,8 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
     data_df = df.iloc[data_construct['row']['data_start_row']:, :]
     # new_indicator_flag = False
     if indicator_id in indicators_date_map.keys():
-        last_date = indicators_date_map[indicator_id]
+        temp_date = indicators_date_map[indicator_id]
+        last_date = temp_date if isinstance(temp_date, datetime) else datetime.combine(temp_date, datetime.min.time())
     else:
         last_date = datetime.min
         # new_indicator_flag = True
@@ -67,18 +66,23 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
         return
 
     now = datetime.now()
+    # 数据入库时间
     current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
+    # 缓存指标最后更新日期
     new_date = last_date
     many_data = []
     for index, row in data_df.iterrows():
         current_date = row.iloc[0]
         indicator_value = row.iloc[1]
+        # 当前数据的日期小于或者等于缓存日期，说明已经存入数据库，跳过，防止重复入库
         if current_date <= last_date:
             break
-        many_data.append((generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit,
-                         indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
-                         current_time))
+        many_data.append((generate_uuid(), current_date, str(indicator_value), indicator_id, indicator_unit,
+                          indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
+                          current_time))
         new_date = max(new_date, current_date)
+    if not many_data:
+        return
     with conn.cursor() as cursor:
         insert_sql = f"""
                             INSERT INTO {sql_table} (
@@ -104,8 +108,6 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
         conn.commit()
 
 
-
-
 def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn, exist_indicator):
     indicator_name = df.iloc[data_construct['row']['indicator_name'], 1]
     indicator_frequency = df.iloc[data_construct['row']['indicator_frequency'], 1]
@@ -117,7 +119,8 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         # 需要记录日志，提醒指标已停用
         return
     if indicator_id in indicators_date_map.keys():
-        last_date = indicators_date_map[indicator_id]
+        temp_date = indicators_date_map[indicator_id]
+        last_date = temp_date if isinstance(temp_date, datetime) else datetime.combine(temp_date, datetime.min.time())
     else:
         last_date = datetime.min
     # 同一指标
@@ -138,7 +141,7 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         if current_date <= last_date:
             break
         many_data.append((generate_uuid(), current_date, indicator_id, indicator_unit, indicator_name,
-                          indicator_frequency, indicator_resource, current_value, file_name, current_time,
+                          indicator_frequency, indicator_resource, str(current_value), file_name, current_time,
                           current_time))
     with conn.cursor() as cursor:
         insert_sql = f"""insert into {sql_table} (
@@ -160,6 +163,17 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         except Exception as e:
             print(e)
         conn.commit()
+
+
+def get_indicators_id_date_map(conn):
+    result = []
+    with conn.cursor() as cur:
+        for table_name in TABLE_NAME:
+            sql = f"""select INDICATOR_ID, MAX(RECORD_DATE) from {table_name} group by INDICATOR_ID"""
+            cur.execute(sql)
+            result.extend(cur.fetchall())
+
+    return collect_rows(result)
 
 
 if __name__ == '__main__':
