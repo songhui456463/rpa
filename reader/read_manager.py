@@ -50,7 +50,8 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
     data_df = df.iloc[data_construct['row']['data_start_row']:, :]
     # new_indicator_flag = False
     if indicator_id in indicators_date_map.keys():
-        last_date = indicators_date_map[indicator_id]
+        temp_date = indicators_date_map[indicator_id]
+        last_date = temp_date if isinstance(temp_date, datetime) else datetime.combine(temp_date, datetime.min.time())
     else:
         last_date = datetime.min
         # new_indicator_flag = True
@@ -65,18 +66,23 @@ def insert_data_ths(indicators_date_map, data_construct, df, file_name, conn, ex
         return
 
     now = datetime.now()
+    # 数据入库时间
     current_time = now.strftime('%Y%m%d%H%M%S') + now.strftime('%f')[:3]
+    # 缓存指标最后更新日期
     new_date = last_date
     many_data = []
     for index, row in data_df.iterrows():
         current_date = row.iloc[0]
         indicator_value = row.iloc[1]
+        # 当前数据的日期小于或者等于缓存日期，说明已经存入数据库，跳过，防止重复入库
         if current_date <= last_date:
             break
-        many_data.append((generate_uuid(), current_date, indicator_value, indicator_id, indicator_unit,
+        many_data.append((generate_uuid(), current_date, str(indicator_value), indicator_id, indicator_unit,
                           indicator_frequency, indicator_resource, indicator_name, file_name, current_time,
                           current_time))
         new_date = max(new_date, current_date)
+    if not many_data:
+        return
     with conn.cursor() as cursor:
         insert_sql = f"""
                             INSERT INTO {sql_table} (
@@ -113,7 +119,8 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         # 需要记录日志，提醒指标已停用
         return
     if indicator_id in indicators_date_map.keys():
-        last_date = indicators_date_map[indicator_id]
+        temp_date = indicators_date_map[indicator_id]
+        last_date = temp_date if isinstance(temp_date, datetime) else datetime.combine(temp_date, datetime.min.time())
     else:
         last_date = datetime.min
     # 同一指标
@@ -134,7 +141,7 @@ def insert_data_mysteel(indicators_date_map, data_construct, df, file_name, conn
         if current_date <= last_date:
             break
         many_data.append((generate_uuid(), current_date, indicator_id, indicator_unit, indicator_name,
-                          indicator_frequency, indicator_resource, current_value, file_name, current_time,
+                          indicator_frequency, indicator_resource, str(current_value), file_name, current_time,
                           current_time))
     with conn.cursor() as cursor:
         insert_sql = f"""insert into {sql_table} (
