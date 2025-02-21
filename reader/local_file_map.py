@@ -1,9 +1,11 @@
 from file_handle import extract_file_title, extract_prefix
+from reader.read_insert_method import insert_data_ths, insert_data_mysteel
 
 file_construct = {
     'mysteel': {
         'folder_path': '.././data/mysteel',
         'filter_function': extract_file_title,
+        'read_insert_function': insert_data_mysteel,
         'col': {
             'date_col': 0,
             'data_start_col': 1,
@@ -23,6 +25,7 @@ file_construct = {
     'ths': {
         'folder_path': '.././data/ths',
         'filter_function': extract_prefix,
+        'read_insert_function': insert_data_ths,
         'col': {
             'date_col': 0,
             'data_start_col': 1,
