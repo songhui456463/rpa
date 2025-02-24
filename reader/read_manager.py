@@ -1,4 +1,11 @@
 import os
+import sys
+
+# 设置工作目录
+work_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(work_dir)
+sys.path.append(root_dir)
+os.chdir(work_dir)
 
 import pandas as pd
 
